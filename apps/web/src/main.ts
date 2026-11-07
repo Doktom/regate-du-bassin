@@ -254,7 +254,7 @@ function showHome(loaded: LoadedSnapshot, challenge: ActiveChallenge | null = nu
   const notes: string[] = [];
   if (!live) notes.push(`Météo du jour indisponible : course enregistrée du ${snapshot.date}.`);
   else if (loaded.shared) notes.push("Vent AROME de Météo-France et marée du jour, les mêmes pour tous les joueurs.");
-  else notes.push("La course commune n'est pas encore publiée : vent et marée récupérés sur cet appareil.");
+  else notes.push("Cette course utilise le vent et la marée récupérés sur cet appareil, pas la course commune.");
   notes.push(
     loaded.shared
       ? "5 bots courent aussi. À la fin de la course, vous pourrez défier un ami avec un lien."
