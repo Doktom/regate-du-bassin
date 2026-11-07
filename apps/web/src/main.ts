@@ -8,8 +8,11 @@ import {
   chooseCourse,
   courseLengthNm,
   createWindField,
+  decodeChallenge,
   dist,
   headingFor,
+  MAX_CHALLENGE_ORDERS,
+  MAX_NAME_LENGTH,
   type HelmAdvice,
   METRES_PER_NM,
   MSL_ABOVE_DATUM_M,
@@ -18,6 +21,7 @@ import {
   norm180,
   norm360,
   type Order,
+  parisDate,
   predictTrack,
   type RaceSnapshot,
   sampleWind,
@@ -25,10 +29,32 @@ import {
   startPosition,
   tideAt,
 } from "@regate/sim";
-import { courses, loadSnapshot, polar, read, router, seabed, write } from "./assets.ts";
+import {
+  courses,
+  forgetPrivateSnapshot,
+  loadDaily,
+  type LoadedSnapshot,
+  loadSnapshot,
+  polar,
+  purgeOldDays,
+  read,
+  router,
+  seabed,
+  write,
+} from "./assets.ts";
 import { Compass } from "./compass.ts";
 import { MapView } from "./map.ts";
-import { loadHistory, loadSavedRace, PLAYER_COLOR, type RaceEvent, Session } from "./session.ts";
+import {
+  type ActiveChallenge,
+  loadHistory,
+  loadSavedChallenge,
+  loadSavedRace,
+  PLAYER_COLOR,
+  type RaceEvent,
+  RIVAL_ID,
+  type SavedRace,
+  Session,
+} from "./session.ts";
 import "./style.css";
 
 const app = document.getElementById("app") as HTMLElement;
@@ -63,9 +89,12 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-function pickCourse(snapshot: RaceSnapshot, forcedId: string | null): CourseDef {
+function pickCourse(loaded: LoadedSnapshot, forcedId: string | null): CourseDef {
   const forced = courses.find((c) => c.id === forcedId);
   if (forced) return forced;
+  const ofTheDay = courses.find((c) => c.id === loaded.courseId);
+  if (ofTheDay) return ofTheDay;
+  const snapshot = loaded.snapshot;
   const previous = loadHistory().find((h) => h.date !== snapshot.date)?.course ?? null;
   const previousId = courses.find((c) => c.name === previous)?.id ?? null;
   return chooseCourse(
@@ -145,11 +174,13 @@ function drawPreview(canvas: HTMLCanvasElement, def: CourseDef, snapshot: RaceSn
   );
 }
 
-function showHome(snapshot: RaceSnapshot, live: boolean): void {
+function showHome(loaded: LoadedSnapshot, challenge: ActiveChallenge | null = null): void {
   app.replaceChildren();
-  const saved = loadSavedRace(snapshot.date);
+  const { snapshot, live } = loaded;
+  const saved = challenge ? loadSavedChallenge(challenge.code) : loadSavedRace(snapshot.date);
   const params = new URLSearchParams(location.search);
-  let chosen = courses.find((c) => c.id === saved?.courseId) ?? pickCourse(snapshot, params.get("course"));
+  let chosen =
+    courses.find((c) => c.id === (challenge?.data.courseId ?? saved?.courseId)) ?? pickCourse(loaded, params.get("course"));
   let speed = saved?.scale ?? read<number>("regate.speed") ?? DEFAULT_SPEED;
   const windInfo = summarizeWind(snapshot);
   const dateLabel = new Intl.DateTimeFormat("fr-FR", { dateStyle: "full", timeZone: "UTC" }).format(
@@ -161,14 +192,20 @@ function showHome(snapshot: RaceSnapshot, live: boolean): void {
 
   const card = el("section", "card");
   card.setAttribute("aria-label", "Course du jour");
-  const eyebrow = el("p", "eyebrow", `Course du ${dateLabel}`);
+  const eyebrow = el("p", "eyebrow");
+  // The name comes from someone else's link: it is only ever inserted as text.
+  eyebrow.textContent = challenge ? `Défi de ${challenge.data.name} · ${dateLabel}` : `Course du ${dateLabel}`;
   const title = el("h2");
   const desc = el("p", "desc");
   const preview = el("canvas", "preview");
   const facts = el("div", "facts");
   const refresh = (): void => {
     title.textContent = chosen.name;
-    desc.textContent = chosen.description;
+    desc.textContent = challenge
+      ? `${challenge.data.name} ${
+          challenge.data.finishS === null ? "n'a pas terminé ce parcours" : `a terminé ce parcours en ${duration(challenge.data.finishS)}`
+        }. Même vent, même marée : son bateau navigue à côté du vôtre.`
+      : chosen.description;
     const length = courseLengthNm(buildCourse(chosen));
     facts.innerHTML = `
       <div class="fact"><b>${hhmm(snapshot.startT)} → ${hhmm(snapshot.closeT)}</b><span>Départ et clôture</span></div>
@@ -182,12 +219,12 @@ function showHome(snapshot: RaceSnapshot, live: boolean): void {
   const courseField = el("label", "field", "Parcours");
   const courseSelect = el("select");
   for (const c of courses) {
-    const o = el("option", undefined, c.name);
+    const o = el("option", undefined, c.id === loaded.courseId && !challenge ? `${c.name} (course du jour)` : c.name);
     o.value = c.id;
     courseSelect.append(o);
   }
   courseSelect.value = chosen.id;
-  courseSelect.disabled = saved !== null;
+  courseSelect.disabled = saved !== null || challenge !== null;
   courseSelect.addEventListener("change", () => {
     chosen = courses.find((c) => c.id === courseSelect.value) as CourseDef;
     refresh();
@@ -208,27 +245,40 @@ function showHome(snapshot: RaceSnapshot, live: boolean): void {
   speedField.append(speedSelect);
   controls.append(courseField, speedField);
 
-  const join = el("button", "primary wide", saved ? "Reprendre la course" : "Rejoindre la course");
+  const joinLabel = saved ? "Reprendre la course" : challenge ? "Relever le défi" : "Rejoindre la course";
+  const join = el("button", "primary wide", joinLabel);
   join.addEventListener("click", () => {
-    showGame(snapshot, chosen, speed, saved);
+    showGame(loaded, chosen, speed, saved, challenge);
   });
 
   const notes: string[] = [];
+  if (!live) notes.push(`Météo du jour indisponible : course enregistrée du ${snapshot.date}.`);
+  else if (loaded.shared) notes.push("Vent AROME de Météo-France et marée du jour, les mêmes pour tous les joueurs.");
+  else notes.push("La course commune n'est pas encore publiée : vent et marée récupérés sur cet appareil.");
   notes.push(
-    live
-      ? `Vent AROME de Météo-France et marée du jour, figés pour la journée.`
-      : `Météo du jour indisponible : course enregistrée du ${snapshot.date}.`,
+    loaded.shared
+      ? "5 bots courent aussi. À la fin de la course, vous pourrez défier un ami avec un lien."
+      : "Vous courez contre 5 bots. Le lien de défi demande la course commune.",
   );
-  notes.push("Prototype : vous courez contre 5 bots. Le multijoueur entre amis viendra ensuite.");
   const noteEl = el("p", "note", notes.join(" "));
   card.append(eyebrow, title, desc, preview, facts, controls, join, noteEl);
   if (saved) {
     const restart = el("button", "ghost wide", "Recommencer de zéro");
     restart.addEventListener("click", () => {
-      write("regate.race", null);
-      showHome(snapshot, live);
+      if (challenge) {
+        write("regate.challenge", null);
+      } else {
+        write("regate.race", null);
+        if (!loaded.shared) forgetPrivateSnapshot(snapshot.date);
+      }
+      void boot();
     });
     card.append(restart);
+  }
+  if (challenge) {
+    const daily = el("button", "ghost wide", "Voir plutôt la course du jour");
+    daily.addEventListener("click", leaveChallengeLink);
+    card.append(daily);
   }
   inner.append(card);
 
@@ -263,9 +313,15 @@ const TUTORIAL = [
   ["Attention au sable", "À marée basse, les bancs découvrent. Le sable arrête le bateau, et si l'eau se retire sous vous, il faudra attendre qu'elle remonte. Le curseur du temps montre la marée à venir."],
 ];
 
-function showGame(snapshot: RaceSnapshot, def: CourseDef, speed: number, saved: ReturnType<typeof loadSavedRace>): void {
+function showGame(
+  loaded: LoadedSnapshot,
+  def: CourseDef,
+  speed: number,
+  saved: SavedRace | null,
+  challenge: ActiveChallenge | null,
+): void {
   app.replaceChildren();
-  const session = new Session(snapshot, def, speed, saved);
+  const session = new Session(loaded.snapshot, def, speed, saved, challenge);
   const world = session.world;
   const root = el("div", "game");
   const canvas = el("canvas", "map");
@@ -421,7 +477,8 @@ function showGame(snapshot: RaceSnapshot, def: CourseDef, speed: number, saved: 
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("resize", onResize);
     document.removeEventListener("visibilitychange", onVisibility);
-    showHome(snapshot, true);
+    if (challenge && session.over) leaveChallengeLink();
+    else showHome(loaded, challenge);
   };
   quitBtn.addEventListener("click", leave);
 
@@ -545,7 +602,22 @@ function showGame(snapshot: RaceSnapshot, def: CourseDef, speed: number, saved: 
     box.setAttribute("aria-label", "Résultat de la course");
     const heading = el("h2");
     const intro = el("p");
-    if (me.finishT !== null) {
+    const rival = rows.find((r) => r.id === RIVAL_ID);
+    if (challenge && rival) {
+      const won =
+        me.finishT !== null
+          ? rival.finishT === null || me.finishT <= rival.finishT
+          : rival.finishT === null && me.remainingM <= rival.remainingM;
+      heading.textContent = won ? "Défi gagné !" : `${rival.name} garde l'avantage`;
+      const gap =
+        me.finishT !== null && rival.finishT !== null
+          ? duration(Math.abs(me.finishT - rival.finishT))
+          : me.finishT === null && rival.finishT === null
+            ? nm(Math.abs(me.remainingM - rival.remainingM))
+            : null;
+      const mine = me.finishT !== null ? `Arrivée en ${duration(me.finishT - session.startT)}` : `Il vous restait ${nm(me.remainingM)}`;
+      intro.textContent = gap ? `${mine}, avec un écart de ${gap}.` : `${mine}.`;
+    } else if (me.finishT !== null) {
       heading.textContent = myRank === 1 ? "Victoire !" : `${myRank}e sur ${rows.length}`;
       intro.textContent = `Arrivée en ${duration(me.finishT - session.startT)} sur ${world.course.def.name}.`;
     } else {
@@ -554,13 +626,64 @@ function showGame(snapshot: RaceSnapshot, def: CourseDef, speed: number, saved: 
     }
     const list = el("ol", "rank-list");
     fillRanks(list, rows);
-    const done = el("button", "primary wide", "Retour à l'accueil");
+    box.append(heading, intro);
+    if (session.rivalDrift) {
+      box.append(el("p", "note", "Cet appareil recalcule un résultat un peu différent de celui du lien : le temps affiché est celui recalculé ici."));
+    }
+    box.append(list, shareBlock());
+    const done = el("button", "ghost wide", "Retour à l'accueil");
     done.addEventListener("click", leave);
     const stay = el("button", "ghost wide", "Regarder la carte");
     stay.addEventListener("click", () => overlay.remove());
-    box.append(heading, intro, list, done, stay);
+    box.append(done, stay);
     overlay.append(box);
     root.append(overlay);
+  };
+
+  const shareBlock = (): HTMLElement => {
+    const block = el("div", "share");
+    if (!loaded.shared) {
+      block.append(el("p", "note", "Pas de lien de défi : cette course n'est pas la course commune publiée."));
+      return block;
+    }
+    if (session.orders.length > MAX_CHALLENGE_ORDERS) {
+      block.append(el("p", "note", "Pas de lien de défi : trop d'ordres pour tenir dans un lien."));
+      return block;
+    }
+    const field = el("label", "field", "Votre nom sur le lien");
+    const input = el("input");
+    input.maxLength = MAX_NAME_LENGTH;
+    input.autocomplete = "off";
+    input.placeholder = "Un ami";
+    input.value = read<string>("regate.name") ?? "";
+    field.append(input);
+    const send = el("button", "primary wide", challenge ? "Renvoyer un défi" : "Défier un ami");
+    const output = el("input", "share-link hidden");
+    output.readOnly = true;
+    output.setAttribute("aria-label", "Lien du défi");
+    const status = el("p", "note hidden");
+    status.setAttribute("role", "status");
+    send.addEventListener("click", () => {
+      write("regate.name", input.value);
+      const url = `${location.origin}${location.pathname}#defi=${session.shareCode(input.value)}`;
+      output.value = url;
+      output.classList.remove("hidden");
+      output.select();
+      const say = (text: string): void => {
+        status.textContent = text;
+        status.classList.remove("hidden");
+      };
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          say("Lien copié. Collez-le à la personne que vous défiez.");
+        } catch {
+          say("Copiez ce lien et envoyez-le à la personne que vous défiez.");
+        }
+      })();
+    });
+    block.append(field, send, output, status);
+    return block;
   };
 
   const fillRanks = (list: HTMLElement, rows: ReturnType<Session["ranking"]>): void => {
@@ -695,8 +818,8 @@ function showGame(snapshot: RaceSnapshot, def: CourseDef, speed: number, saved: 
         heading: p.heading,
         twd: sampleWind(field, p.x, p.y, session.simT).twd,
         color: b.profile.color,
-        label: b.profile.name.split(" ")[0],
-        size: 9,
+        label: b.profile.id === RIVAL_ID ? b.profile.name : b.profile.name.split(" ")[0],
+        size: b.profile.id === RIVAL_ID ? 11 : 9,
         speedKn: p.speedKn,
       };
     });
@@ -792,13 +915,55 @@ function showTutorial(root: HTMLElement, onDone: () => void): void {
   root.append(overlay);
 }
 
-async function start(): Promise<void> {
-  app.append(el("div", "home", `<div class="home-inner"><header class="brand"><h1>Régate du Bassin</h1><p>Récupération du vent et de la marée…</p></header></div>`));
-  const { snapshot, live } = await loadSnapshot();
-  showHome(snapshot, live);
-  if ("serviceWorker" in navigator && import.meta.env.PROD) {
-    navigator.serviceWorker.register("./sw.js").catch(() => undefined);
-  }
+/** Removes a challenge from the address, and shows the race of the day. */
+function leaveChallengeLink(): void {
+  history.replaceState(null, "", location.pathname + location.search);
+  void boot();
 }
 
-void start();
+function showChallengeError(text: string): void {
+  app.replaceChildren();
+  const home = el("div", "home");
+  const inner = el("div", "home-inner");
+  const card = el("section", "card", "<h2>Défi indisponible</h2>");
+  const message = el("p", "desc");
+  message.textContent = text;
+  const back = el("button", "primary wide", "Voir la course du jour");
+  back.addEventListener("click", leaveChallengeLink);
+  card.append(message, back);
+  inner.append(card);
+  home.append(inner);
+  app.append(home);
+}
+
+async function boot(): Promise<void> {
+  app.replaceChildren(
+    el("div", "home", `<div class="home-inner"><header class="brand"><h1>Régate du Bassin</h1><p>Récupération du vent et de la marée…</p></header></div>`),
+  );
+  if (location.hash.startsWith("#defi=")) {
+    const code = location.hash.slice("#defi=".length);
+    const data = decodeChallenge(code);
+    if (!data) {
+      showChallengeError("Ce lien de défi est incomplet ou incorrect. Demandez à votre ami de le renvoyer.");
+      return;
+    }
+    purgeOldDays([parisDate(), data.date]);
+    const daily = await loadDaily(data.date);
+    if (!daily || !courses.some((c) => c.id === data.courseId)) {
+      showChallengeError("La course de ce défi n'a pas pu être chargée. Vérifiez la connexion, puis rouvrez le lien.");
+      return;
+    }
+    showHome({ snapshot: daily.snapshot, shared: true, live: true, courseId: data.courseId }, { code, data });
+    return;
+  }
+  purgeOldDays([parisDate()]);
+  showHome(await loadSnapshot());
+}
+
+// A link pasted into a tab already open only changes the address after the #.
+window.addEventListener("hashchange", () => void boot());
+
+void boot();
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  navigator.serviceWorker.register("./sw.js").catch(() => undefined);
+}

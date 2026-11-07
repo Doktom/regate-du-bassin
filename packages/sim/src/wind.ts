@@ -1,3 +1,4 @@
+import { datan2, dcos, dhypot, dsin } from "./dmath.ts";
 import { latOf, lonOf, norm360 } from "./geo.ts";
 
 /** Frozen wind forecast. Values are flat arrays indexed [time][lat][lon]. */
@@ -33,8 +34,8 @@ export function createWindField(s: WindSnapshot): WindField {
   const v = new Float64Array(n);
   for (let i = 0; i < n; i++) {
     const r = (s.dirDeg[i] * Math.PI) / 180;
-    u[i] = -s.speedKn[i] * Math.sin(r);
-    v[i] = -s.speedKn[i] * Math.cos(r);
+    u[i] = -s.speedKn[i] * dsin(r);
+    v[i] = -s.speedKn[i] * dcos(r);
   }
   return { lats: s.lats, lons: s.lons, times: s.times, u, v };
 }
@@ -79,5 +80,5 @@ export function sampleWind(f: WindField, x: number, y: number, t: number): WindS
   };
   const u = at(f.u, k) * (1 - ft) + at(f.u, k + 1) * ft;
   const v = at(f.v, k) * (1 - ft) + at(f.v, k + 1) * ft;
-  return { tws: Math.hypot(u, v), twd: norm360((Math.atan2(-u, -v) * 180) / Math.PI) };
+  return { tws: dhypot(u, v), twd: norm360((datan2(-u, -v) * 180) / Math.PI) };
 }

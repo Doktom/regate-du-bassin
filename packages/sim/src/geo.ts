@@ -1,10 +1,11 @@
+import { datan2, dcos, dhypot, dsin } from "./dmath.ts";
 /** Local equirectangular projection centred on the Bassin. x is east, y is north, in metres. */
 const ORIGIN_LAT = 44.67;
 const ORIGIN_LON = -1.14;
 const EARTH_RADIUS_M = 6371000;
 const DEG = Math.PI / 180;
 const M_PER_DEG_LAT = EARTH_RADIUS_M * DEG;
-const M_PER_DEG_LON = M_PER_DEG_LAT * Math.cos(ORIGIN_LAT * DEG);
+const M_PER_DEG_LON = M_PER_DEG_LAT * dcos(ORIGIN_LAT * DEG);
 
 export const KN_TO_MS = 1852 / 3600;
 export const METRES_PER_NM = 1852;
@@ -38,15 +39,15 @@ export function norm180(deg: number): number {
 }
 
 export function headingVec(deg: number): Vec {
-  return { x: Math.sin(deg * DEG), y: Math.cos(deg * DEG) };
+  return { x: dsin(deg * DEG), y: dcos(deg * DEG) };
 }
 
 export function bearing(a: Vec, b: Vec): number {
-  return norm360(Math.atan2(b.x - a.x, b.y - a.y) / DEG);
+  return norm360(datan2(b.x - a.x, b.y - a.y) / DEG);
 }
 
 export function dist(a: Vec, b: Vec): number {
-  return Math.hypot(b.x - a.x, b.y - a.y);
+  return dhypot(b.x - a.x, b.y - a.y);
 }
 
 /** Parameter along p->q where it crosses a->b, or null when the segments do not cross. */

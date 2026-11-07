@@ -4,9 +4,22 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # Course du jour, vers 4 h ou 5 h à Paris. Le second passage rattrape un échec du premier.
+    - cron: "10 3 * * *"
+    - cron: "40 5 * * *"
 
 permissions:
   contents: read
+
+# Un seul passage à la fois : la branche des courses et le site ne doivent pas se croiser.
+concurrency:
+  group: regate-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+env:
+  DAILY_BRANCH: course-du-jour
 
 jobs:
   test:
@@ -21,21 +34,82 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name == 'push'
-        with:
-          path: apps/web/dist
 
-  deploy:
-    if: github.event_name == 'push'
+  # Un lien de défi doit donner le même résultat dans tous les navigateurs.
+  engines:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm i --no-save playwright@1.65.0
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: node scripts/engine-check/run.mjs chromium,firefox,webkit
+
+  # Une course publiée n'est jamais réécrite : les liens de défi la rejouent ensuite.
+  daily:
+    if: github.event_name != 'pull_request'
     needs: test
     runs-on: ubuntu-latest
     permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DAILY_BRANCH }}
+          path: .daily
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/publish-daily.ts .daily
+      - name: Enregistrer la course du jour
+        working-directory: .daily
+        run: |
+          git add '*.json'
+          if git diff --cached --quiet; then
+            echo "Rien de nouveau"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Course du jour"
+            git push
+          fi
+
+  # Le site se publie même si la météo est indisponible : le jeu a alors une solution de secours.
+  deploy:
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.test.result == 'success' }}
+    needs: [test, daily]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DAILY_BRANCH }}
+          path: .daily
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Ajouter les courses publiées au site
+        run: |
+          mkdir -p apps/web/public/daily
+          cp .daily/*.json apps/web/public/daily/
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4

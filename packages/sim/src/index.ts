@@ -7,3 +7,4 @@ export * from "./course.ts";
 export * from "./sim.ts";
 export * from "./bot.ts";
 export * from "./snapshot.ts";
+export * from "./challenge.ts";

@@ -1,3 +1,4 @@
+import { dhypot } from "./dmath.ts";
 import { bearing, dist, headingVec, METRES_PER_NM, norm360, toXY, type Vec } from "./geo.ts";
 
 export type Side = "port" | "starboard";
@@ -53,7 +54,7 @@ export function buildCourse(def: CourseDef): RaceCourse {
     const outDir = headingVec(bearing(buoy, points[i + 2]));
     const sum = { x: inDir.x + outDir.x, y: inDir.y + outDir.y };
     // A hairpin has no usable bisector, so the gate faces the incoming direction.
-    const t = Math.hypot(sum.x, sum.y) < 0.2 ? inDir : sum;
+    const t = dhypot(sum.x, sum.y) < 0.2 ? inDir : sum;
     const travelDeg = bearing({ x: 0, y: 0 }, t);
     // Leaving the buoy to port means the boat passes on its right-hand side.
     const gateDeg = norm360(travelDeg + (m.side === "port" ? 90 : -90));

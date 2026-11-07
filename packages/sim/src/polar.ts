@@ -1,3 +1,4 @@
+import { dcos } from "./dmath.ts";
 export interface Polar {
   id: string;
   name: string;
@@ -41,7 +42,7 @@ export function bestVmgAngles(p: Polar, tws: number): VmgAngles {
   let bestUp = -Infinity;
   let bestDown = -Infinity;
   for (let a = NO_GO_DEG; a <= 180; a++) {
-    const vmg = boatSpeed(p, a, tws) * Math.cos((a * Math.PI) / 180);
+    const vmg = boatSpeed(p, a, tws) * dcos((a * Math.PI) / 180);
     if (vmg > bestUp) {
       bestUp = vmg;
       upwind = a;

@@ -676,3 +676,14 @@ select:focus-visible {
     width: 430px;
   }
 }
+
+.share {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+
+.share-link {
+  width: 100%;
+  font-size: 13px;
+}

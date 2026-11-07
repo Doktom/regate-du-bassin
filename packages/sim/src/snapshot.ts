@@ -2,7 +2,7 @@ import { buildCourse, type CourseDef, type RaceCourse } from "./course.ts";
 import { bearing, norm180, type Vec } from "./geo.ts";
 import { seabedHeight, type Seabed } from "./seabed.ts";
 import { calibrateOpenMeteoTide, tideAt, type TideSeries } from "./tide.ts";
-import { sampleWind, type WindField, type WindSnapshot } from "./wind.ts";
+import { createWindField, sampleWind, type WindField, type WindSnapshot } from "./wind.ts";
 
 /** Everything frozen for one race day. This data is the only game truth. */
 export interface RaceSnapshot {
@@ -166,3 +166,47 @@ export function chooseCourse(
   return best as ChosenCourse;
 }
 
+
+export function parisDate(ms = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date(ms));
+}
+
+/** The race of the day, published once and identical for every player. */
+export interface DailyRace {
+  snapshot: RaceSnapshot;
+  courseId: string;
+}
+
+export function buildDailyRace(
+  snapshot: RaceSnapshot,
+  defs: CourseDef[],
+  seabed: Seabed,
+  draftM: number,
+  previousId: string | null,
+): DailyRace {
+  const chosen = chooseCourse(
+    defs,
+    createWindField(snapshot.wind),
+    snapshot.tide,
+    seabed,
+    snapshot.startT,
+    snapshot.closeT,
+    draftM,
+    previousId,
+  );
+  return { snapshot, courseId: chosen.course.def.id };
+}
+
+/** Checks a downloaded race of the day. A wrong or incomplete file gives null. */
+export function parseDailyRace(raw: unknown, date: string): DailyRace | null {
+  const r = raw as Partial<DailyRace> | null;
+  const s = r?.snapshot;
+  if (typeof r?.courseId !== "string" || !s || s.date !== date) return null;
+  if (typeof s.startT !== "number" || typeof s.closeT !== "number") return null;
+  const w = s.wind;
+  if (!Array.isArray(w?.lats) || !Array.isArray(w?.lons) || !Array.isArray(w?.times)) return null;
+  const values = w.lats.length * w.lons.length * w.times.length;
+  if (values === 0 || w.speedKn?.length !== values || w.dirDeg?.length !== values) return null;
+  if (!Array.isArray(s.tide?.times) || s.tide.times.length === 0) return null;
+  return { snapshot: s, courseId: r.courseId };
+}

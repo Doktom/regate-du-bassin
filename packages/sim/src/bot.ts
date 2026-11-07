@@ -1,3 +1,4 @@
+import { dcos, dhypot } from "./dmath.ts";
 import { type Gate, nextTarget } from "./course.ts";
 import { bearing, dist, headingVec, norm180, norm360, type Vec } from "./geo.ts";
 import { bestVmgAngles, boatSpeed, NO_GO_DEG } from "./polar.ts";
@@ -226,7 +227,7 @@ function stageTarget(w: World, s: BoatState): Vec {
     const mid = nextTarget(w.course, s.nextMark);
     const nx = -(b.y - a.y);
     const ny = b.x - a.x;
-    const len = Math.hypot(nx, ny);
+    const len = dhypot(nx, ny);
     const towards = (mid.x - s.x) * nx + (mid.y - s.y) * ny >= 0 ? 1 : -1;
     return { x: mid.x + (towards * nx * 250) / len, y: mid.y + (towards * ny * 250) / len };
   }
@@ -334,7 +335,7 @@ export function adviseHelm(w: World, r: Router, s: BoatState): HelmAdvice {
   const wind = sampleWind(w.wind, s.x, s.y, s.t);
   const routeBearing = bearing(s, steerPoint(w, r, s));
   const vmgOf = (h: number): number =>
-    boatSpeed(w.polar, Math.abs(norm180(h - wind.twd)), wind.tws) * Math.cos(((h - routeBearing) * Math.PI) / 180);
+    boatSpeed(w.polar, Math.abs(norm180(h - wind.twd)), wind.tws) * dcos(((h - routeBearing) * Math.PI) / 180);
   const isClear = (h: number): boolean => {
     const d = headingVec(h);
     return clearOfBanks(w, s, { x: s.x + d.x * 300, y: s.y + d.y * 300 }, s.t);

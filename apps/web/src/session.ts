@@ -1,20 +1,25 @@
 import {
-  adviseHelm,
   type BoatState,
   botPoseAt,
   BOT_PROFILES,
   type BotTrack,
   buildCourse,
+  type Challenge,
   type CourseDef,
   createWindField,
-  initialState,
+  encodeChallenge,
+  fromChallengeOrders,
   norm180,
   type Order,
+  playerStartState,
   type RaceSnapshot,
   remainingDistance,
+  replayTrack,
+  roundOrderValue,
   runBot,
   startPosition,
   step,
+  toChallengeOrders,
   STEP_S,
   type World,
 } from "@regate/sim";
@@ -27,6 +32,14 @@ export interface SavedRace {
   simT: number;
   wallAt: number;
   scale: number;
+  /** The link being answered, when this race is a challenge. */
+  code?: string;
+}
+
+/** A challenge received through a link. */
+export interface ActiveChallenge {
+  code: string;
+  data: Challenge;
 }
 
 export interface RankRow {
@@ -55,12 +68,22 @@ export type RaceEvent =
   | { kind: "closed" };
 
 const raceKey = "regate.race";
+const challengeKey = "regate.challenge";
 const historyKey = "regate.history";
 export const PLAYER_COLOR = "#e8674f";
+export const RIVAL_ID = "rival";
+const RIVAL_COLOR = "#1f6fd6";
+/** Gap above which a replay no longer matches the time the sender saw. */
+const DRIFT_TOLERANCE_S = 1;
 
 export function loadSavedRace(date: string): SavedRace | null {
   const s = read<SavedRace>(raceKey);
   return s && s.date === date ? s : null;
+}
+
+export function loadSavedChallenge(code: string): SavedRace | null {
+  const s = read<SavedRace>(challengeKey);
+  return s && s.code === code ? s : null;
 }
 
 export function loadHistory(): HistoryEntry[] {
@@ -73,6 +96,9 @@ export class Session {
   readonly snapshot: RaceSnapshot;
   readonly startT: number;
   readonly closeT: number;
+  readonly challenge: ActiveChallenge | null;
+  /** The replay on this device ended differently from what the sender saw. */
+  readonly rivalDrift: boolean = false;
   player: BoatState;
   previous: BoatState;
   orders: Order[] = [];
@@ -87,8 +113,15 @@ export class Session {
   private lastSave = 0;
   private recorded = false;
 
-  constructor(snapshot: RaceSnapshot, def: CourseDef, scale: number, saved: SavedRace | null) {
+  constructor(
+    snapshot: RaceSnapshot,
+    def: CourseDef,
+    scale: number,
+    saved: SavedRace | null,
+    challenge: ActiveChallenge | null = null,
+  ) {
     this.snapshot = snapshot;
+    this.challenge = challenge;
     this.startT = snapshot.startT;
     this.closeT = snapshot.closeT;
     const course = buildCourse(def);
@@ -98,8 +131,19 @@ export class Session {
       runBot(this.world, router, p, startPosition(course, (i + 0.5) / BOT_PROFILES.length), this.startT, this.closeT),
     );
     const pos = startPosition(course, 0.5);
-    const atStart = initialState(pos, this.startT, 0, this.world);
-    this.player = initialState(pos, this.startT, adviseHelm(this.world, router, atStart).heading, this.world);
+    this.player = playerStartState(this.world, router, pos, this.startT);
+    if (challenge) {
+      const profile = { id: RIVAL_ID, name: challenge.data.name, color: RIVAL_COLOR, angleError: 0, layline: 0 };
+      const orders = fromChallengeOrders(challenge.data.orders, this.startT);
+      const rival = replayTrack(this.world, this.player, orders, this.closeT, profile);
+      this.bots.push(rival);
+      const claimed = challenge.data.finishS;
+      const replayed = rival.final.finishT === null ? null : rival.final.finishT - this.startT;
+      this.rivalDrift =
+        claimed === null || replayed === null
+          ? claimed !== replayed
+          : Math.abs(claimed - replayed) > DRIFT_TOLERANCE_S;
+    }
     this.previous = this.player;
     this.current = { t: this.startT, mode: "heading", value: this.player.heading };
     this.simT = this.startT;
@@ -146,7 +190,9 @@ export class Session {
     const events = this.catchUp();
     if (!this.over && (this.player.status === "finished" || this.simT >= this.closeT)) {
       this.over = true;
+      // The boat may have finished while the app was closed: the result is still to show.
       if (this.player.status !== "finished") events.push({ kind: "closed" });
+      else if (!events.some((e) => e.kind === "finished")) events.push({ kind: "finished" });
       this.recordResult();
     }
     if (now - this.lastSave > 4000) this.save();
@@ -165,7 +211,7 @@ export class Session {
   }
 
   sendOrder(mode: Order["mode"], value: number): void {
-    this.orders.push({ t: this.simT, mode, value });
+    this.orders.push({ t: this.simT, mode, value: roundOrderValue(value) });
     this.save();
   }
 
@@ -183,8 +229,9 @@ export class Session {
       simT: this.simT,
       wallAt: Date.now(),
       scale: this.scale,
+      code: this.challenge?.code,
     };
-    write(raceKey, s);
+    write(this.challenge ? challengeKey : raceKey, s);
   }
 
   /** Display position, one step behind the race clock so motion can be interpolated. */
@@ -241,9 +288,26 @@ export class Session {
     return this.ranking(this.closeT);
   }
 
+  /** Link content for this finished race, so that someone else can sail against it. */
+  shareCode(name: string): string {
+    const p = this.player;
+    const lastT = p.finishT ?? this.closeT;
+    return encodeChallenge({
+      date: this.snapshot.date,
+      courseId: this.world.course.def.id,
+      name,
+      finishS: p.finishT === null ? null : p.finishT - this.startT,
+      orders: toChallengeOrders(
+        this.orders.filter((o) => o.t <= lastT),
+        this.startT,
+      ),
+    });
+  }
+
   private recordResult(): void {
     if (this.recorded) return;
     this.recorded = true;
+    if (this.challenge) return;
     const rows = this.finalRanking();
     const rank = rows.findIndex((r) => r.isPlayer) + 1;
     const me = rows[rank - 1];
