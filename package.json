@@ -1,0 +1,21 @@
+{
+  "name": "regate-du-bassin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "dev": "npm run dev -w @regate/web",
+    "build": "npm run build -w @regate/web",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p packages/sim && tsc --noEmit -p apps/web",
+    "snapshot": "node scripts/fetch-snapshot.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

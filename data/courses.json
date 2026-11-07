@@ -1,0 +1,73 @@
+[
+  {
+    "id": "ile-aux-oiseaux",
+    "name": "Tour de l'Île aux Oiseaux",
+    "description": "Le classique : on laisse l'île à bâbord par le Courbey et Piquey.",
+    "start": [{ "lat": 44.6715, "lon": -1.178 }, { "lat": 44.6755, "lon": -1.178 }],
+    "marks": [
+      { "name": "Le Courbey", "lat": 44.695, "lon": -1.152, "side": "port" },
+      { "name": "Piquey", "lat": 44.717, "lon": -1.18, "side": "port" },
+      { "name": "La Vigne", "lat": 44.7, "lon": -1.226, "side": "port" }
+    ],
+    "finish": [{ "lat": 44.671, "lon": -1.196 }, { "lat": 44.676, "lon": -1.196 }]
+  },
+  {
+    "id": "eyrac-ferret",
+    "name": "Eyrac – Cap Ferret – Eyrac",
+    "description": "Aller-retour par le Teychan jusqu'à la pointe du Cap Ferret.",
+    "start": [{ "lat": 44.673, "lon": -1.15 }, { "lat": 44.677, "lon": -1.15 }],
+    "marks": [
+      { "name": "Pointe du Ferret", "lat": 44.64, "lon": -1.232, "side": "starboard" },
+      { "name": "Bélisaire", "lat": 44.665, "lon": -1.222, "side": "starboard" }
+    ],
+    "finish": [{ "lat": 44.671, "lon": -1.168 }, { "lat": 44.676, "lon": -1.168 }]
+  },
+  {
+    "id": "arguin",
+    "name": "Banc d'Arguin",
+    "description": "Sortie par les passes et tour du banc d'Arguin, côté océan.",
+    "start": [{ "lat": 44.648, "lon": -1.228 }, { "lat": 44.648, "lon": -1.222 }],
+    "marks": [
+      { "name": "Arguin Ouest", "lat": 44.585, "lon": -1.272, "side": "port" },
+      { "name": "Arguin Sud", "lat": 44.562, "lon": -1.262, "side": "port" },
+      { "name": "Arguin Est", "lat": 44.58, "lon": -1.228, "side": "port" }
+    ],
+    "finish": [{ "lat": 44.626, "lon": -1.228 }, { "lat": 44.626, "lon": -1.22 }]
+  },
+  {
+    "id": "grand-tour",
+    "name": "Grand tour du Bassin",
+    "description": "Le Teychan, le Courbey, Piquey puis la pointe du Ferret : le long format.",
+    "start": [{ "lat": 44.6715, "lon": -1.178 }, { "lat": 44.6755, "lon": -1.178 }],
+    "marks": [
+      { "name": "Le Tès", "lat": 44.681, "lon": -1.1, "side": "port" },
+      { "name": "Le Courbey", "lat": 44.695, "lon": -1.152, "side": "port" },
+      { "name": "Piquey", "lat": 44.717, "lon": -1.18, "side": "port" },
+      { "name": "Pointe du Ferret", "lat": 44.64, "lon": -1.232, "side": "port" }
+    ],
+    "finish": [{ "lat": 44.671, "lon": -1.196 }, { "lat": 44.676, "lon": -1.196 }]
+  },
+  {
+    "id": "piquey-ares",
+    "name": "Chenal de Piquey",
+    "description": "Remontée du chenal de Piquey vers Arès, à tenter marée haute.",
+    "start": [{ "lat": 44.688, "lon": -1.226 }, { "lat": 44.688, "lon": -1.22 }],
+    "marks": [
+      { "name": "Piquey", "lat": 44.717, "lon": -1.19, "side": "starboard" },
+      { "name": "Arès", "lat": 44.74, "lon": -1.16, "side": "starboard" },
+      { "name": "Jacquets", "lat": 44.714, "lon": -1.205, "side": "starboard" }
+    ],
+    "finish": [{ "lat": 44.682, "lon": -1.226 }, { "lat": 44.682, "lon": -1.218 }]
+  },
+  {
+    "id": "fond-du-bassin",
+    "name": "Le fond du Bassin",
+    "description": "Vers Lanton par le Teychan, retour par le chenal de Gujan.",
+    "start": [{ "lat": 44.676, "lon": -1.15 }, { "lat": 44.68, "lon": -1.15 }],
+    "marks": [
+      { "name": "Lanton", "lat": 44.688, "lon": -1.085, "side": "port" },
+      { "name": "Gujan", "lat": 44.665, "lon": -1.125, "side": "port" }
+    ],
+    "finish": [{ "lat": 44.673, "lon": -1.164 }, { "lat": 44.678, "lon": -1.164 }]
+  }
+]

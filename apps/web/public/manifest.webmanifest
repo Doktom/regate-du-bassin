@@ -1,0 +1,12 @@
+{
+  "name": "Régate du Bassin",
+  "short_name": "Régate",
+  "description": "Régate virtuelle sur le Bassin d'Arcachon, avec le vent et la marée réels du jour.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#bfeee0",
+  "theme_color": "#2f9dbb",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
